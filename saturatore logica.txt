@@ -1,0 +1,2 @@
+A= y(9) and not( y(8) and y(7));
+B=  not(y(9)) and ( y(8) or y(7));
