@@ -55,6 +55,3 @@ ing <= DATA_IN;
 clock <= CLK;
 DATA_OUT <= U;
 end Stru;
-
-
-
