@@ -14,8 +14,10 @@ end Digital_Filter;
 architecture behav of Digital_filter is
 
 --dichiarazione degli stati
-	TYPE State_type is (IDLE, WRITE_IN_A, I_OP, II_OP, III_OP, SAT, MEDIA);
+	TYPE State_type is (IDLE, WRITE_IN_A, AB, MINUS_D_WR_B, MINUS_D, PLUS_Y, MINUS_Y, LOWER_SAT, GREATER_SAT, EQUAL_SAT, AVERAGE);
 	Signal stato	:State_type;
+--dichiarazione dei segnali per gli stati
+	signal TC1, TC2 : std_logic; --il primo serve per uscire dallo stato di scrittura in A...il secondo per fare la media
 	
 
 -- dichiarazione dei segnali per il contatore
@@ -168,6 +170,26 @@ architecture behav of Digital_filter is
 	
 	begin
 	
+	FSM_transitions: Process(Rst,  clk)
+	begin
+		If Rst = '1' then
+			stato<= IDLE;
+		elsif(clk' event And clk='1') then
+			CASE stato is
+				WHEN IDLLE        => If start = '0' then stato <= IDLE; else stato <= WRITE_IN_A; end if;
+				WHEN WRITE_IN_A   => if TC1 = '0' then stato <= WRITE_IN_A; else stato <= AB; end if;
+				WHEN AB
+				WHEN MINUS_D_WR_B 
+				WHEN MINUS_D
+				WHEN PLUS_Y
+				WHEN MINUS_Y
+				WHEN LOWER_SAT
+				WHEN GREATER_SAT
+				WHEN EQUAL_SAT
+				WHEN AVERAGE
+	
+	
+	
 	--Descrizione del Data Path
 	
 	-- descrizione del contatore
@@ -221,11 +243,5 @@ architecture behav of Digital_filter is
 	Reg_M 	  : Reg_8_bit port map( D => Data_Media_in, Rest => Rst, Clock => clk, Q => Data_media_out, EN => DONE);
 	--associazione del dato di media alla porta di uscita
 	M <= Data_media_out;
-	
-	
-
-	
-	
-	
 	
 end behav;
