@@ -1,6 +1,7 @@
 LIBRARY ieee;
 USE ieee.std_logic_1164.all;
 USE ieee.numeric_std.all;
+use ieee.std_logic_unsigned.all;
 
 Entity Digital_Filter is 
 	port (
@@ -19,10 +20,12 @@ architecture behav of Digital_filter is
 --dichiarazione dei segnali per gli stati
 	signal TC1, TC2 : std_logic; --il primo serve per uscire dallo stato di scrittura in A...il secondo per fare la media
 	signal active_mem_B: std_logic; -- attiva lo stato  MINUS_D_WR_B per scrivere in B, si attiva dal secondo ciclo in poi
+	
 
 -- dichiarazione dei segnali per il contatore
 	signal cnt_en	: std_logic;
 	signal cnt	: unsigned(11 downto 0);
+	signal cnt_conv : std_logic_vector (11 downto 0);
 
 -- dichiarazione dei segnali per la Mem_A
 	signal data_out_Mem_A, data_in_Mem_A : signed (7 downto 0);
@@ -112,7 +115,7 @@ architecture behav of Digital_filter is
 		port 
 			(
 			Cnt_EN, CLK, Clear: in std_logic; 
-		 Q: buffer unsigned(N-1 downto 0)
+		 Q: buffer unsigned (N-1 downto 0)
 			);
 	end component;
 	
@@ -176,37 +179,89 @@ architecture behav of Digital_filter is
 			stato<= IDLE;
 		elsif(clk' event And clk='1') then
 			CASE stato is
-				WHEN IDLLE        => if start = '0' then stato <= IDLE; else stato <= WRITE_IN_A; end if;
+				WHEN IDLE         => if start = '0' then stato <= IDLE; else stato <= WRITE_IN_A; end if;
 				WHEN WRITE_IN_A   => if TC1 = '0' then stato <= WRITE_IN_A; else stato <= AB; end if;
 				WHEN AB				=> if active_mem_B='1' then stato <= MINUS_D_WR_B; else stato <= MINUS_D; end if;
 				WHEN MINUS_D_WR_B => if cnt(2)='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;
 				WHEN MINUS_D		=> if cnt(2)='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;	
-				WHEN PLUS_Y       => if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT;
-				WHEN MINUS_Y		=> if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT;
-				WHEN LOWER_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB;
-				WHEN GREATER_SAT  => if ( TC2='1') then stato <= AVERAGE; else stato <= AB;
-				WHEN EQUAL_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB;
-				WHEN AVERAGE		=> if cnt(0)='1' then ( if start='1' then stato <= AVERAGE; else stato <= IDLE; end if; ) else stato <=AVERAGE; end if;
+				WHEN PLUS_Y       => if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT; end if;
+				WHEN MINUS_Y		=> if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT; end if;
+				WHEN LOWER_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
+				WHEN GREATER_SAT  => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
+				WHEN EQUAL_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
+				WHEN AVERAGE		=> if cnt(0)='1' then  if start='1' then stato <= AVERAGE; else stato <= IDLE; end if;  else stato <=AVERAGE; end if;	
+			end case;
+		end if;
+	end process;
+	
+	
+	FSM_outputs: Process(stato, start)
+		begin			
+			CASE stato is
+				WHEN IDLE  		=>
+											wr_n_rd_A <='0';	wr_n_rd_B <='0'; CS_A <= '0'; CS_B <= '0';
+											Add_n_Sub <= '0'; Sel_1 <= "00";
+				
+				WHEN WRITE_IN_A 	=> 
+											wr_n_rd_A <= '0'; CS_A <= '1'; cnt_EN <= '1';
+				
+				WHEN AB				=>
+											wr_n_rd_A <= '0'; LD_R_1 <= '1';CS_A <= '0'; Add_n_Sub <= '0'; Sel_1 <= "00"; EN_Y_1 <= '1';
+				
+				WHEN MINUS_D_WR_B =>
+											CS_A <= '0'; LD_R_1 <= '0'; EN_Y_1 <= '1'; Add_n_Sub <= '1'; Sel_1 <= "01";
+											CS_B <= '1';											 
+				
+				WHEN MINUS_D => 		CS_A <= '0'; LD_R_1 <= '0'; EN_Y_1 <= '1'; Add_n_Sub <= '1'; Sel_1 <= "01";
+				
+				WHEN PLUS_Y  => 		Sel_1 <= "10"; Add_n_Sub <= '0';
+				
+				WHEN MINUS_Y =>
+											Sel_1 <= "10";
+				
+				WHEN LOWER_SAT 	=>
+											Sel_2 <= "10";									
+						
+				
+				WHEN GREATER_SAT	=>
+											Sel_2 <= "01";
+				
+				WHEN EQUAL_SAT		=>
+											Sel_2 <= "00";
+				
+				WHEN AVERAGE		=>
+											Done <= '1'; EN_Y_1 <= '0';
+				
+			end case;
+	      end process;			
 	
 	
 	
 	--Descrizione del Data Path
 	
 	--descrizione signal per switch stat: MINUS_D_WR_B, MINUS_D
-	active_mem_B=cnt(11) or cnt(10) or cnt(9) or cnt(8) or cnt(7) or cnt(6) or cnt(5) or cnt(4) or cnt(3) or cnt(2);
+	active_mem_B <= (std_logic(cnt(11)) or std_logic( cnt(10)) or std_logic(cnt(9)) or std_logic(cnt(8))
+						or std_logic(cnt(7)) or std_logic(cnt(6)) or std_logic(cnt(5))
+	   				or std_logic(cnt(4)) or std_logic(cnt(3)) or std_logic(cnt(2)));
+	TC1 <= ( std_logic(cnt(9)) and std_logic(cnt(8))
+						and std_logic(cnt(7)) and std_logic(cnt(6)) and std_logic(cnt(5))
+	   				and std_logic(cnt(4)) and std_logic(cnt(3)) and std_logic(cnt(2)));
+	TC2 <= ( std_logic(cnt(11)) and std_logic(cnt(10)) and std_logic(cnt(9)) and std_logic(cnt(8))
+						and std_logic(cnt(7)) and std_logic(cnt(6)) and std_logic(cnt(5))
+	   				and std_logic(cnt(4)) and std_logic(cnt(3)) and std_logic(cnt(2)));
 	
 	-- descrizione del contatore
-	contatore: counter_12_bit_sincrono port map( Cnt_En => cnt_en, clk => clk, clear => rst, Q => cnt);
+	contatore: 	counter_12_bit_sincrono port map (Cnt_en => cnt_en, clk => clk, clear => rst, Q => cnt); 
 	
 	-- Descrizione della Mem_A
 	data_in_Mem_A <= Data_IN;
-	Mem_A: SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, RD => wr_n_rd_A, clk => clk);
+	Mem_A:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, RD => wr_n_rd_A, clk => clk);
 	
 	--caricamento e shift dei registri
-	Reg_A: Reg_8_bit port map (D =>data_out_mem_A , Rest => Rst, Clock => clk , Q =>Data_A_8_bit , EN => LD_R_1 );
-	Reg_B: Reg_8_bit port map (D =>data_A_8_bit , Rest =>Rst, Clock =>clk , Q => Data_B_8_bit , EN => LD_R_1);
-	Reg_C: Reg_8_bit port map (D =>data_B_8_bit, Rest => Rst, Clock =>clk, Q => Data_C_8_bit, EN =>LD_R_1);
-	Reg_D: Reg_8_bit port map (D =>data_C_8_bit, Rest =>Rst, Clock => clk, Q => Data_D_8_bit, EN => LD_R_1);
+	Reg_A: 	Reg_8_bit port map (D =>data_out_mem_A , Rest => Rst, Clock => clk , Q =>Data_A_8_bit , EN => LD_R_1 );
+	Reg_B: 	Reg_8_bit port map (D =>data_A_8_bit , Rest =>Rst, Clock =>clk , Q => Data_B_8_bit , EN => LD_R_1);
+	Reg_C: 	Reg_8_bit port map (D =>data_B_8_bit, Rest => Rst, Clock =>clk, Q => Data_C_8_bit, EN =>LD_R_1);
+	Reg_D: 	Reg_8_bit port map (D =>data_C_8_bit, Rest =>Rst, Clock => clk, Q => Data_D_8_bit, EN => LD_R_1);
 	
 	--operazione di A/4
 	Data_A_10_bit <= (Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7 downto 2));
@@ -216,14 +271,14 @@ architecture behav of Digital_filter is
 	Data_D_10_bit <= ( Data_D_10_bit(7) & Data_D_10_bit(7 downto 0) & '0');
 	
 	--descrizione del mux1
-	mux1: mux_4_to_1_10bit port map (Data_00 => Data_A_10_bit, Data_01 => y_dopo, Data_10_11 => "0000000000", sel => sel_1, y => data_mux_1);
-	mux2: mux_4_to_1_10bit port map (Data_00 => data_b_10_bit, Data_01 => Data_D_10_bit, Data_10_11 => y_dopo, sel => sel_1, y => data_mux_2);
+	mux1: 	mux_4_to_1_10bit port map (Data_00 => Data_A_10_bit, Data_01 => y_dopo, Data_10_11 => "0000000000", sel => sel_1, y => data_mux_1);
+	mux2: 	mux_4_to_1_10bit port map (Data_00 => data_b_10_bit, Data_01 => Data_D_10_bit, Data_10_11 => y_dopo, sel => sel_1, y => data_mux_2);
 	
 	--descrizione del sommatore per fare i calcoli per y
-	Sommatore_1: Adder_Subtractor_10_bit port map(a => data_mux_1, b => data_mux_2, y => y_prima, c_in => Add_n_Sub);
+	Sommatore_1: 	Adder_Subtractor_10_bit port map(a => data_mux_1, b => data_mux_2, y => y_prima, c_in => Add_n_Sub);
 	
 	--descrizione del registro Reg_Y
-	Reg_Y: Reg_10_bit port map (D => y_prima, rest => rst, clock => clk, Q => y_dopo, EN => EN_y_1);
+	Reg_Y: 	Reg_10_bit port map (D => y_prima, rest => rst, clock => clk, Q => y_dopo, EN => EN_y_1);
 	
 	--descrizione del saturatore:  logica per settare i valori di A e B e mux... A e B settano Sel2
 	A <= y_dopo(9) and not( y_dopo(8) and y_dopo(7));
@@ -231,7 +286,7 @@ architecture behav of Digital_filter is
 	mux_3: mux_4_to_1_8bit port map( sel => sel_2, y1 => y_dopo(7 downto 0), y2 => "01111111", y3 => "10000000", y4 => y_dopo( 7 downto 0), y_sat => y_sat);
 	
 	--descrizione della Mem_B
-	Mem_B: SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, RD => wr_n_rd_B, clk => clk);
+	Mem_B:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, RD => wr_n_rd_B, clk => clk);
 	Data_out_mem_B <= y_mem_B;
 	
 	--descrizione della struttura che calcola la media
@@ -240,12 +295,11 @@ architecture behav of Digital_filter is
 										& data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7)
 										& data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7 downto 0));
 	--sommo il valore di reg_sum con il valore letto da mem_A
-	Sommatore_2: Adder_subtractor_18_bit port map (a => data_sum_in, b => Data_out_mem_A_18_bit, c_in => '0', y => data_sum_out);
-	Reg_Sum	  : Reg_18_bit port map( D => data_sum_out, Rest => Rst, Clock => clk, Q => data_sum_in, EN => LD_R_1);
+	Sommatore_2:	Adder_subtractor_18_bit port map (a => data_sum_in, b => Data_out_mem_A_18_bit, c_in => '0', y => data_sum_out);
+	Reg_Sum	  :	Reg_18_bit port map( D => data_sum_out, Rest => Rst, Clock => clk, Q => data_sum_in, EN => LD_R_1);
 	Data_Media_IN <= data_sum_in(17 downto 10);
-	Reg_M 	  : Reg_8_bit port map( D => Data_Media_in, Rest => Rst, Clock => clk, Q => Data_media_out, EN => DONE);
+	Reg_M 	  : 	Reg_8_bit port map( D => Data_Media_in, Rest => Rst, Clock => clk, Q => Data_media_out, EN => DONE);
 	--associazione del dato di media alla porta di uscita
 	M <= Data_media_out;
-	
 	
 end behav;
