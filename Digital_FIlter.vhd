@@ -8,7 +8,8 @@ Entity Digital_Filter is
 				clk, start, rst	: in std_logic;
 				Data_IN				: in signed( 7 downto 0);
 				M 						: out signed( 7 downto 0);
-				Data_out_mem_B		: out signed (7 downto 0)
+				Data_out_mem_B		: out signed (7 downto 0);
+				M_disp				: out std_logic
 			);
 end Digital_Filter;
 
@@ -26,7 +27,6 @@ architecture behav of Digital_filter is
 	signal cnt_en	: std_logic;
 	signal cnt	: unsigned(11 downto 0);
 	signal cnt_2, cnt_0: std_logic;
-	--signal cnt_conv : std_logic_vector (11 downto 0);
 
 -- dichiarazione dei segnali per la Mem_A
 	signal data_out_Mem_A, data_in_Mem_A : signed (7 downto 0);
@@ -69,6 +69,7 @@ architecture behav of Digital_filter is
 
 -- dichiarazione del segnale di DONE
 	signal DONE	: std_logic;
+	--signal M_disp_sgn : std_logic;
 	
 	
 	--memoria RAM
@@ -85,7 +86,7 @@ architecture behav of Digital_filter is
 	component Reg_8_bit is
 	generic (n : integer := 8);
 	port ( D : in signed(n-1 downto 0);
-			 Rest, Clock, EN : in std_logic;
+			 Rest_1, Clock, EN_1 : in std_logic;
 			 Q : out signed(N-1 downto 0)
 			 );
 	end component;
@@ -95,7 +96,7 @@ architecture behav of Digital_filter is
 	component Reg_10_bit is
 	generic (n : integer := 10);
 	port ( D : in signed(n-1 downto 0);
-			 Rest, Clock, EN : in std_logic;
+			 Rest_1, Clock, EN_1 : in std_logic;
 			 Q : out signed(N-1 downto 0)
 			 );
 	end component;
@@ -105,7 +106,7 @@ architecture behav of Digital_filter is
 	component Reg_18_bit is
 	generic (n : integer := 18);
 	port ( D : in signed(n-1 downto 0);
-			 Rest, Clock, EN : in std_logic;
+			 Rest_1, Clock, EN_1 : in std_logic;
 			 Q : out signed(N-1 downto 0)
 			 );
 	end component;
@@ -115,8 +116,8 @@ architecture behav of Digital_filter is
 		generic ( N : integer:=12);
 		port 
 			(
-			Cnt_EN, CLK, Clear: in std_logic; 
-		 Q: buffer unsigned (N-1 downto 0)
+			Cnt_EN_1, CLK, Clear_1: in std_logic; 
+		 cnt: buffer unsigned (N-1 downto 0)
 			);
 	end component;
 	
@@ -149,11 +150,11 @@ architecture behav of Digital_filter is
 		);
 	end component;
 
-	--Sommatore con parallelismo da 10 bit utilizzato per i calcoli per valutare il dato inserire nella Mem_B
+	--Sommatore con parallelismo da 10 bit utilizzato per i calcoli per valutare il dato da inserire nella Mem_B
 	component Adder_Subtractor_10_bit is
 	generic (n : integer := 10);
 		port(
-				c_in : IN std_logic;
+				Add_n_Sub : IN std_logic;
 				a, b : IN signed (n-1 downto 0);
 				y	  : Out signed (n-1 downto 0)
 			 );
@@ -163,7 +164,7 @@ architecture behav of Digital_filter is
 	component Adder_Subtractor_18_bit is
 	generic (n : integer := 18);
 		port(
-				c_in : IN std_logic;
+				Add_n_Sub : IN std_logic;
 				a, b : IN signed (n-1 downto 0);
 				y	  : Out signed (n-1 downto 0)
 			 );
@@ -201,7 +202,7 @@ architecture behav of Digital_filter is
 			CASE stato is
 				WHEN IDLE  		=>
 											wr_n_rd_A <='0';	wr_n_rd_B <='0'; CS_A <= '0'; CS_B <= '0';
-											Add_n_Sub <= '0'; Sel_1 <= "00"; cnt_En <= '0'; 
+											Add_n_Sub <= '0'; Sel_1 <= "00"; cnt_En <= '0';  
 				
 				WHEN WRITE_IN_A 	=> 
 											wr_n_rd_A <= '0'; CS_A <= '1'; cnt_EN <= '1';
@@ -238,9 +239,8 @@ architecture behav of Digital_filter is
 	
 	
 	
-	--Descrizione del Data Path
 	
-	--descrizione signal per switch stat: MINUS_D_WR_B, MINUS_D
+	--descrizione signal per switch stati: MINUS_D_WR_B, MINUS_D
 	active_mem_B <= (std_logic(cnt(11)) or std_logic( cnt(10)) or std_logic(cnt(9)) or std_logic(cnt(8))
 						or std_logic(cnt(7)) or std_logic(cnt(6)) or std_logic(cnt(5))
 	   				or std_logic(cnt(4)) or std_logic(cnt(3)) or std_logic(cnt(2)));
@@ -253,18 +253,20 @@ architecture behav of Digital_filter is
 	cnt_2 <= std_logic(cnt(2));
 	cnt_0 <= std_logic(cnt(0));
 	
+	--Descrizione del Data Path...La descrizione avviene seguendo lo schema del data path dall'alto verso il basso 
+	
 	-- descrizione del contatore
-	contatore: 	counter_12_bit_sincrono port map (Cnt_en => cnt_en, clk => clk, clear => rst, Q => cnt); 
+	contatore: 	counter_12_bit_sincrono port map (Cnt_en_1 => cnt_en, clk => clk, clear_1 => rst, cnt => cnt); 
 	
 	-- Descrizione della Mem_A
 	data_in_Mem_A <= Data_IN;
-	Mem_A:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, clk => clk);
+	Mem_A:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, RD => wr_n_rd_A, clk => clk);
 	
 	--caricamento e shift dei registri
-	Reg_A: 	Reg_8_bit port map (D =>data_out_mem_A , Rest => Rst, Clock => clk , Q =>Data_A_8_bit , EN => LD_R_1 );
-	Reg_B: 	Reg_8_bit port map (D =>data_A_8_bit , Rest =>Rst, Clock =>clk , Q => Data_B_8_bit , EN => LD_R_1);
-	Reg_C: 	Reg_8_bit port map (D =>data_B_8_bit, Rest => Rst, Clock =>clk, Q => Data_C_8_bit, EN =>LD_R_1);
-	Reg_D: 	Reg_8_bit port map (D =>data_C_8_bit, Rest =>Rst, Clock => clk, Q => Data_D_8_bit, EN => LD_R_1);
+	Reg_A: 	Reg_8_bit port map (D =>data_out_mem_A , Rest_1 => Rst, Clock => clk , Q =>Data_A_8_bit , EN_1 => LD_R_1 );
+	Reg_B: 	Reg_8_bit port map (D =>data_A_8_bit , Rest_1 =>Rst, Clock =>clk , Q => Data_B_8_bit , EN_1 => LD_R_1);
+	Reg_C: 	Reg_8_bit port map (D =>data_B_8_bit, Rest_1 => Rst, Clock =>clk, Q => Data_C_8_bit, EN_1 =>LD_R_1);
+	Reg_D: 	Reg_8_bit port map (D =>data_C_8_bit, Rest_1 =>Rst, Clock => clk, Q => Data_D_8_bit, EN_1 => LD_R_1);
 	
 	--operazione di A/4
 	Data_A_10_bit <= (Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7) & Data_A_8_bit(7 downto 2));
@@ -278,10 +280,10 @@ architecture behav of Digital_filter is
 	mux2: 	mux_4_to_1_10bit port map (Data_00 => data_b_10_bit, Data_01 => Data_D_10_bit, Data_10_11 => y_dopo, sel => sel_1, y => data_mux_2);
 	
 	--descrizione del sommatore per fare i calcoli per y
-	Sommatore_1: 	Adder_Subtractor_10_bit port map(a => data_mux_1, b => data_mux_2, y => y_prima, c_in => Add_n_Sub);
+	Sommatore_1: 	Adder_Subtractor_10_bit port map(a => data_mux_1, b => data_mux_2, y => y_prima, Add_n_Sub => Add_n_Sub);
 	
 	--descrizione del registro Reg_Y
-	Reg_Y: 	Reg_10_bit port map (D => y_prima, rest => rst, clock => clk, Q => y_dopo, EN => EN_y_1);
+	Reg_Y: 	Reg_10_bit port map (D => y_prima, rest_1 => rst, clock => clk, Q => y_dopo, EN_1 => EN_y_1);
 	
 	--descrizione del saturatore:  logica per settare i valori di A e B e mux... A e B settano Sel2
 	A <= y_dopo(9) and not( y_dopo(8) and y_dopo(7));
@@ -289,7 +291,7 @@ architecture behav of Digital_filter is
 	mux_3: mux_4_to_1_8bit port map( sel => sel_2, y1 => y_dopo(7 downto 0), y2 => "01111111", y3 => "10000000", y4 => y_dopo( 7 downto 0), y_sat => y_sat);
 	
 	--descrizione della Mem_B
-	Mem_B:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, clk => clk);
+	Mem_B:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, RD => wr_n_rd_A, clk => clk);
 	Data_out_mem_B <= y_mem_B;
 	
 	--descrizione della struttura che calcola la media
@@ -298,11 +300,21 @@ architecture behav of Digital_filter is
 										& data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7)
 										& data_out_mem_A(7) & data_out_mem_A(7) & data_out_mem_A(7 downto 0));
 	--sommo il valore di reg_sum con il valore letto da mem_A
-	Sommatore_2:	Adder_subtractor_18_bit port map (a => data_sum_in, b => Data_out_mem_A_18_bit, c_in => '0', y => data_sum_out);
-	Reg_Sum	  :	Reg_18_bit port map( D => data_sum_out, Rest => Rst, Clock => clk, Q => data_sum_in, EN => LD_R_1);
+	Sommatore_2:	Adder_subtractor_18_bit port map (a => data_sum_in, b => Data_out_mem_A_18_bit, Add_n_Sub => '0', y => data_sum_out);
+	Reg_Sum	  :	Reg_18_bit port map( D => data_sum_out, Rest_1 => Rst, Clock => clk, Q => data_sum_in, EN_1 => LD_R_1);
 	Data_Media_IN <= data_sum_in(17 downto 10);
-	Reg_M 	  : 	Reg_8_bit port map( D => Data_Media_in, Rest => Rst, Clock => clk, Q => Data_media_out, EN => DONE);
+	Reg_M 	  : 	Reg_8_bit port map( D => Data_Media_in, Rest_1 => Rst, Clock => clk, Q => Data_media_out, EN_1 => DONE);
 	--associazione del dato di media alla porta di uscita
 	M <= Data_media_out;
+	
+	
+	--descrizione della struttura che mi permette un'eventuale lettura dei dati dalla mem B...puramente combinatoria
+	process (done, cnt)
+	begin
+	if ((DONE and cnt(0) and cnt(1))='1') then
+	M_disp <= '1';
+	end if;
+	end process;
+	--M_disp<= M_disp_sgn;
 	
 end behav;
