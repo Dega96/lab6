@@ -25,7 +25,8 @@ architecture behav of Digital_filter is
 -- dichiarazione dei segnali per il contatore
 	signal cnt_en	: std_logic;
 	signal cnt	: unsigned(11 downto 0);
-	signal cnt_conv : std_logic_vector (11 downto 0);
+	signal cnt_2, cnt_0: std_logic;
+	--signal cnt_conv : std_logic_vector (11 downto 0);
 
 -- dichiarazione dei segnali per la Mem_A
 	signal data_out_Mem_A, data_in_Mem_A : signed (7 downto 0);
@@ -182,14 +183,14 @@ architecture behav of Digital_filter is
 				WHEN IDLE         => if start = '0' then stato <= IDLE; else stato <= WRITE_IN_A; end if;
 				WHEN WRITE_IN_A   => if TC1 = '0' then stato <= WRITE_IN_A; else stato <= AB; end if;
 				WHEN AB				=> if active_mem_B='1' then stato <= MINUS_D_WR_B; else stato <= MINUS_D; end if;
-				WHEN MINUS_D_WR_B => if cnt(2)='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;
-				WHEN MINUS_D		=> if cnt(2)='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;	
+				WHEN MINUS_D_WR_B => if cnt_2='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;
+				WHEN MINUS_D		=> if cnt_2='1' then stato <= MINUS_Y; else stato <= PLUS_Y; end if;	
 				WHEN PLUS_Y       => if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT; end if;
 				WHEN MINUS_Y		=> if ( A='1' and B='0') then  stato <= LOWER_SAT; elsif ( A='0' and B='1') then stato <= GREATER_SAT; else stato<= EQUAL_SAT; end if;
 				WHEN LOWER_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
 				WHEN GREATER_SAT  => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
 				WHEN EQUAL_SAT    => if ( TC2='1') then stato <= AVERAGE; else stato <= AB; end if;
-				WHEN AVERAGE		=> if cnt(0)='1' then  if start='1' then stato <= AVERAGE; else stato <= IDLE; end if;  else stato <=AVERAGE; end if;	
+				WHEN AVERAGE		=> if cnt_0='1' then  if start='1' then stato <= AVERAGE; else stato <= IDLE; end if;  else stato <=AVERAGE; end if;	
 			end case;
 		end if;
 	end process;
@@ -200,13 +201,13 @@ architecture behav of Digital_filter is
 			CASE stato is
 				WHEN IDLE  		=>
 											wr_n_rd_A <='0';	wr_n_rd_B <='0'; CS_A <= '0'; CS_B <= '0';
-											Add_n_Sub <= '0'; Sel_1 <= "00";
+											Add_n_Sub <= '0'; Sel_1 <= "00"; cnt_En <= '0'; 
 				
 				WHEN WRITE_IN_A 	=> 
 											wr_n_rd_A <= '0'; CS_A <= '1'; cnt_EN <= '1';
 				
 				WHEN AB				=>
-											wr_n_rd_A <= '0'; LD_R_1 <= '1';CS_A <= '0'; Add_n_Sub <= '0'; Sel_1 <= "00"; EN_Y_1 <= '1';
+											wr_n_rd_A <= '1'; LD_R_1 <= '1';CS_A <= '1'; Add_n_Sub <= '0'; Sel_1 <= "00"; EN_Y_1 <= '1';
 				
 				WHEN MINUS_D_WR_B =>
 											CS_A <= '0'; LD_R_1 <= '0'; EN_Y_1 <= '1'; Add_n_Sub <= '1'; Sel_1 <= "01";
@@ -249,13 +250,15 @@ architecture behav of Digital_filter is
 	TC2 <= ( std_logic(cnt(11)) and std_logic(cnt(10)) and std_logic(cnt(9)) and std_logic(cnt(8))
 						and std_logic(cnt(7)) and std_logic(cnt(6)) and std_logic(cnt(5))
 	   				and std_logic(cnt(4)) and std_logic(cnt(3)) and std_logic(cnt(2)));
+	cnt_2 <= std_logic(cnt(2));
+	cnt_0 <= std_logic(cnt(0));
 	
 	-- descrizione del contatore
 	contatore: 	counter_12_bit_sincrono port map (Cnt_en => cnt_en, clk => clk, clear => rst, Q => cnt); 
 	
 	-- Descrizione della Mem_A
 	data_in_Mem_A <= Data_IN;
-	Mem_A:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, RD => wr_n_rd_A, clk => clk);
+	Mem_A:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => data_in_Mem_A, data_out => data_out_mem_A, CS => CS_A, WR => wr_n_rd_A, clk => clk);
 	
 	--caricamento e shift dei registri
 	Reg_A: 	Reg_8_bit port map (D =>data_out_mem_A , Rest => Rst, Clock => clk , Q =>Data_A_8_bit , EN => LD_R_1 );
@@ -268,7 +271,7 @@ architecture behav of Digital_filter is
 	--incremento del parallelismo del dato_B da 8 a 10 bit
 	Data_B_10_bit <= (Data_B_8_bit(7) & Data_B_8_bit(7) & Data_B_8_bit(7 downto 0));
 	--operazione di D*2
-	Data_D_10_bit <= ( Data_D_10_bit(7) & Data_D_10_bit(7 downto 0) & '0');
+	Data_D_10_bit <= ( Data_D_8_bit(7) & Data_D_8_bit(7 downto 0) & '0');
 	
 	--descrizione del mux1
 	mux1: 	mux_4_to_1_10bit port map (Data_00 => Data_A_10_bit, Data_01 => y_dopo, Data_10_11 => "0000000000", sel => sel_1, y => data_mux_1);
@@ -286,7 +289,7 @@ architecture behav of Digital_filter is
 	mux_3: mux_4_to_1_8bit port map( sel => sel_2, y1 => y_dopo(7 downto 0), y2 => "01111111", y3 => "10000000", y4 => y_dopo( 7 downto 0), y_sat => y_sat);
 	
 	--descrizione della Mem_B
-	Mem_B:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, RD => wr_n_rd_B, clk => clk);
+	Mem_B:	SRAM_SW_AR_1024x8_DEC port map (Address => std_logic_vector(cnt(11 downto 2)), Data_in => y_sat, data_out => y_mem_B, CS => CS_B, WR => wr_n_rd_B, clk => clk);
 	Data_out_mem_B <= y_mem_B;
 	
 	--descrizione della struttura che calcola la media
